@@ -23,11 +23,20 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
+
     // erasure coding params
     let data_shards = 4;
     let parity_shards = 2;
     let r = ReedSolomon::new(data_shards, parity_shards).unwrap();
-    
+    let shard_size = (data.len() + data_shards - 1) / data_shards;
+    let mut shards: Vec<Vec<u8>> = vec![vec![0u8; shard_size]; data_shards + parity_shards];
+    for (i, chunk) in data.chunks(shard_size).enumerate() {
+        shards[i][..chunk.len()].copy_from_slice(chunk);
+    }
+    //encode shards
+    let mut shard_refs: Vec<_> = shards.iter_mut().map(|x| &mut x[..]).collect();
+    r.encode(&mut shard_refs).unwrap();
+
     // build container
     let container = HybridFile {
         file_id: Uuid::new_v4(),
@@ -41,7 +50,8 @@ fn main() {
     let bytes = bincode::serialize(&container).unwrap();
 
     // write out new file format
-    fs::write("output.ecf", bytes).expect("Could not write file");
-
+    fs::write("output.ecf", &bytes).expect("Could not write file");
     println!("Successfully wrote output.ecf");
+
+
 }
