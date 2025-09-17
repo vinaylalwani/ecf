@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
+use reed_solomon_erasure::galois_8::ReedSolomon;
 
 //bundle metadata and data
 #[derive(Serialize, Deserialize, Debug)]
@@ -22,7 +23,11 @@ fn main() {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
-
+    // erasure coding params
+    let data_shards = 4;
+    let parity_shards = 2;
+    let r = ReedSolomon::new(data_shards, parity_shards).unwrap();
+    
     // build container
     let container = HybridFile {
         file_id: Uuid::new_v4(),
