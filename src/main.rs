@@ -19,10 +19,10 @@ fn main() {
     let data = fs::read(input_path).expect("Could not read input file");
 
     // convert current time to seconds since UNIX epoch
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
+let now = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_else(|_| Duration::from_secs(0))  // fallback to epoch
+    .as_secs();
 
     // erasure coding params
     let data_shards = 4;
