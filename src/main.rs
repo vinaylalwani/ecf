@@ -11,7 +11,9 @@ struct HybridFile {
     name: String,
     original_size: u64,
     created_at: u64,
-    data: Vec<u8>, 
+    data_shards: usize,
+    parity_shards: usize,
+    shards: Vec<Vec<u8>>,
 }
 fn main() {
     // read file
@@ -43,7 +45,10 @@ let now = SystemTime::now()
         name: input_path.to_string(),
         original_size: data.len() as u64,
         created_at: now,
-        data,
+        data_shards,
+        parity_shards,
+        shards,
+        
     };
 
 
