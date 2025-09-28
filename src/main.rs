@@ -41,13 +41,13 @@ let now = SystemTime::now()
 
    
      // corrupt first shard
-    /* 
+    
     if let Some(first_shard) = shards.get_mut(0) {
         for byte in first_shard.iter_mut() {
             *byte = byte.wrapping_add(1); 
         }
     }
-    */
+    
     // build container
     let container = HybridFile {
         file_id: Uuid::new_v4(),
@@ -66,4 +66,6 @@ let now = SystemTime::now()
     // write out new file format
     fs::write("output.ecf", &bytes).expect("Could not write file");
     println!("Successfully wrote output.ecf");
+
+
 }
