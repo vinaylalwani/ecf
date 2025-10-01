@@ -17,7 +17,7 @@ struct HybridFile {
 }
 fn main() {
     // read file
-    let input_path = "dummydata.txt";
+    let input_path = "randomimage.jpeg";
     let data = fs::read(input_path).expect("Could not read input file");
 
     // convert current time to seconds since UNIX epoch
