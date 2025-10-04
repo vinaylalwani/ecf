@@ -4,6 +4,7 @@ use std::fs;
 use std::env;
 use std::path::Path;
 use reed_solomon_erasure::galois_8::ReedSolomon;
+use sha2::{Sha256, Digest};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct HybridFile {
@@ -14,8 +15,14 @@ struct HybridFile {
     data_shards: usize,
     parity_shards: usize,
     shards: Vec<Vec<u8>>,
+    shard_hashes: Vec<[u8; 32]>,
 }
 
+fn hash_shard(data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -36,10 +43,35 @@ fn main() {
             s
         })
         .collect();
+    
+    let mut corrupted_indices = vec![];
+    for (i, shard) in shards.iter().enumerate() {
+        let computed = hash_shard(shard);
+        if computed != container.shard_hashes[i] {
+            corrupted_indices.push(i);
+        }
+    }
+    if corrupted_indices.is_empty() {
+        println!("No corruption detected in shards.");
+        //return;
+    }else{
+        println!("Detected corruption in shards: {:?}", corrupted_indices);
+    }
+
+
 
     let r = ReedSolomon::new(container.data_shards, container.parity_shards)
         .expect("Failed to create ReedSolomon instance");
-    let mut shard_refs: Vec<Option<Vec<u8>>> = shards.into_iter().map(Some).collect();
+    let mut shard_refs: Vec<Option<Vec<u8>>> = shards.into_iter()
+        .enumerate()
+        .map(|(i, s)| {
+            if corrupted_indices.contains(&i) {
+                None // ignore corrupted shard
+            } else {
+                Some(s)
+            }
+        })
+        .collect();
     r.reconstruct(&mut shard_refs).expect("Reconstruction failed");
 
     let mut recovered = Vec::with_capacity(container.original_size as usize);
