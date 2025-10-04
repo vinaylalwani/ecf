@@ -3,6 +3,7 @@ use uuid::Uuid;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use reed_solomon_erasure::galois_8::ReedSolomon;
+use std::path::Path;
 use sha2::{Sha256, Digest};
 
 //bundle metadata and data
@@ -25,7 +26,7 @@ fn hash_shard(data: &[u8]) -> [u8; 32] {
 
 fn main() {
     // read file
-    let input_path = "randomimage.jpeg";
+    let input_path = "dummydata.txt";
     let data = fs::read(input_path).expect("Could not read input file");
 
     // convert current time to seconds since UNIX epoch
@@ -114,8 +115,12 @@ if !corrupted_indices.is_empty() {
     let bytes = bincode::serialize(&container).unwrap();
 
     // write out new file format
-    fs::write("output.ecf", &bytes).expect("Could not write file");
-    println!("Successfully wrote output.ecf");
+    let path = Path::new(&container.name);
+    let stem = path.file_stem().unwrap().to_string_lossy();
+    //let ext = path.extension().unwrap_or_default().to_string_lossy(); // extension
+    let output_name = format!("{}.ecfoutput.{}", stem, "ecf");
+    fs::write(&output_name, &bytes).expect("Could not write ecf file");
+    println!("Successfully wrote ecf output");
 
 
 }
