@@ -58,8 +58,6 @@ fn main() {
         println!("Detected corruption in shards: {:?}", corrupted_indices);
     }
 
-
-
     let r = ReedSolomon::new(container.data_shards, container.parity_shards)
         .expect("Failed to create ReedSolomon instance");
     let mut shard_refs: Vec<Option<Vec<u8>>> = shards.into_iter()
