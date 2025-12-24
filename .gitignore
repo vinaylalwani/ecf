@@ -1,0 +1,7 @@
+target/
+Cargo.lock
+*.ecfoutput.ecf
+*.recovered.*
+blockchain_metadata/
+.env
+

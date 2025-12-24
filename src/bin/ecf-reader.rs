@@ -1,3 +1,4 @@
+use ecf::blockchain;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use std::fs;
@@ -5,6 +6,7 @@ use std::env;
 use std::path::Path;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use sha2::{Sha256, Digest};
+use blockchain::BlockchainStorage;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct HybridFile {
@@ -23,17 +25,52 @@ fn hash_shard(data: &[u8]) -> [u8; 32] {
     hasher.update(data);
     hasher.finalize().into()
 }
-fn main() {
+#[tokio::main]
+async fn main() {
+    // Load environment variables from .env file
+    dotenv::dotenv().ok();
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: {} <input_file.ecf>", args[0]);
+        eprintln!("Usage: {} <input_file.ecf> OR {} --blockchain <file_id>", args[0], args[0]);
         std::process::exit(1);
     }
-    let input_path = &args[1];
 
-    // read ecf file
-    let bytes = fs::read(input_path).expect("Could not read .ecf file");
-    let mut container: HybridFile = bincode::deserialize(&bytes).expect("Deserialization failed");
+    let container = if args[1] == "--blockchain" || args[1] == "-b" {
+        // Recover from blockchain using file_id
+        if args.len() < 3 {
+            eprintln!("Usage: {} --blockchain <file_id>", args[0]);
+            std::process::exit(1);
+        }
+        let file_id = &args[2];
+        println!("Recovering file from blockchain/IPFS with file_id: {}", file_id);
+        
+        let blockchain = BlockchainStorage::new(None, None, None).await
+            .expect("Failed to initialize blockchain storage");
+        
+        let metadata = blockchain.retrieve_metadata_from_blockchain(file_id).await
+            .expect("Failed to retrieve metadata from blockchain");
+        
+        let (shards, shard_hashes) = blockchain.recover_file_from_blockchain(&metadata).await
+            .expect("Failed to recover shards from IPFS");
+        
+        HybridFile {
+            file_id: Uuid::parse_str(&metadata.file_id).expect("Invalid file_id"),
+            name: metadata.name,
+            original_size: metadata.original_size,
+            created_at: metadata.created_at,
+            data_shards: metadata.data_shards,
+            parity_shards: metadata.parity_shards,
+            shards,
+            shard_hashes,
+        }
+    } else {
+        // Read from local .ecf file
+        let input_path = &args[1];
+        let bytes = fs::read(input_path).expect("Could not read .ecf file");
+        bincode::deserialize(&bytes).expect("Deserialization failed")
+    };
+
+    let mut container = container;
 
     let shard_len = container.shards[0].len(); // all shards must be same length
     let mut shards: Vec<Vec<u8>> = container.shards
@@ -51,11 +88,40 @@ fn main() {
             corrupted_indices.push(i);
         }
     }
-    if corrupted_indices.is_empty() {
-        println!("No corruption detected in shards.");
-        //return;
-    }else{
+    
+    // If corruption detected and we have local file, try to recover from blockchain
+    if !corrupted_indices.is_empty() {
         println!("Detected corruption in shards: {:?}", corrupted_indices);
+        println!("Attempting to recover corrupted shards from blockchain/IPFS...");
+        
+        if let Ok(blockchain) = BlockchainStorage::new(None, None, None).await {
+            if let Ok(metadata) = blockchain.retrieve_metadata_from_blockchain(&container.file_id.to_string()).await {
+                if let Ok((blockchain_shards, blockchain_hashes)) = blockchain.recover_file_from_blockchain(&metadata).await {
+                    // Replace corrupted shards with blockchain versions
+                    for &idx in &corrupted_indices {
+                        if idx < blockchain_shards.len() {
+                            shards[idx] = blockchain_shards[idx].clone();
+                            container.shard_hashes[idx] = blockchain_hashes[idx];
+                            println!("Recovered shard {} from blockchain", idx);
+                        }
+                    }
+                    // Re-verify after recovery
+                    corrupted_indices.clear();
+                    for (i, shard) in shards.iter().enumerate() {
+                        let computed = hash_shard(shard);
+                        if computed != container.shard_hashes[i] {
+                            corrupted_indices.push(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if corrupted_indices.is_empty() {
+        println!("No corruption detected in shards (or all corruption recovered).");
+    } else {
+        println!("Some shards still corrupted after blockchain recovery: {:?}", corrupted_indices);
     }
 
     let r = ReedSolomon::new(container.data_shards, container.parity_shards)

@@ -1,3 +1,4 @@
+use ecf::blockchain;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use std::fs;
@@ -5,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use std::path::Path;
 use sha2::{Sha256, Digest};
+use blockchain::BlockchainStorage;
 
 //bundle metadata and data
 #[derive(Serialize, Deserialize, Debug)]
@@ -24,7 +26,10 @@ fn hash_shard(data: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
+    // Load environment variables from .env file
+    dotenv::dotenv().ok();
     // read file
     let input_path = "dummydata.txt";
     let data = fs::read(input_path).expect("Could not read input file");
@@ -122,5 +127,35 @@ if !corrupted_indices.is_empty() {
     fs::write(&output_name, &bytes).expect("Could not write ecf file");
     println!("Successfully wrote ecf output");
 
-
+    // Upload shards directly to blockchain
+    println!("\n=== Uploading to Blockchain ===");
+    
+    match BlockchainStorage::new(None, None, None).await {
+        Ok(blockchain) => {
+            match blockchain.upload_file_shards(
+                &container.shards,
+                &container.shard_hashes,
+                &container.file_id.to_string(),
+                &container.name,
+                container.original_size,
+                container.created_at,
+                container.data_shards,
+                container.parity_shards,
+            ).await {
+                Ok(metadata) => {
+                    println!("\nSuccessfully uploaded all shards to blockchain");
+                    println!("File ID: {}", metadata.file_id);
+                    println!("To recover, use: cargo run --bin ecf-reader -- --blockchain <file_id>");
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to upload to blockchain: {}", e);
+                    eprintln!("Local ECF file is still available at: {}", output_name);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: Could not initialize blockchain storage: {}", e);
+            eprintln!("Local ECF file is still available at: {}", output_name);
+        }
+    }
 }
